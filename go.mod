@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/bcollard/homepki v0.8.1
 	github.com/docker/go-units v0.5.0
-	github.com/lima-vm/lima/v2 v2.2.0
+	github.com/lima-vm/lima/v2 v2.2.1
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.58.0
@@ -88,7 +88,7 @@ require (
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect

@@ -12,7 +12,6 @@ import (
 
 	"github.com/bcollard/marina/internal/config"
 	"github.com/lima-vm/lima/v2/pkg/limatype"
-	"github.com/lima-vm/lima/v2/pkg/ptr"
 )
 
 // Ubuntu 26.04 LTS (resolute) cloud images.
@@ -54,11 +53,11 @@ func dataFile(path, content, permissions string) limatype.Provision {
 	return limatype.Provision{
 		Mode: limatype.ProvisionModeData,
 		ProvisionData: limatype.ProvisionData{
-			Content:     ptr.Of(content),
-			Overwrite:   ptr.Of(true),
-			Owner:       ptr.Of("root:root"),
-			Path:        ptr.Of(path),
-			Permissions: ptr.Of(permissions),
+			Content:     new(content),
+			Overwrite:   new(true),
+			Owner:       new("root:root"),
+			Path:        new(path),
+			Permissions: new(permissions),
 		},
 	}
 }
@@ -325,7 +324,7 @@ func BuildMounts(cfg *config.Config) []limatype.Mount {
 	if cfg.Registries.CacheStorage == "host" {
 		home, _ := os.UserHomeDir()
 		cacheDir := filepath.Join(home, ".marina", "registry-cache")
-		mounts = append(mounts, limatype.Mount{Location: cacheDir, Writable: ptr.Of(true)})
+		mounts = append(mounts, limatype.Mount{Location: cacheDir, Writable: new(true)})
 	}
 
 	for _, m := range cfg.VM.Mounts {
@@ -334,12 +333,12 @@ func BuildMounts(cfg *config.Config) []limatype.Mount {
 			slog.Warn("Skipping unexpandable vm.mounts entry", "location", m.Location, "err", err)
 			continue
 		}
-		lm := limatype.Mount{Location: expanded.Location, Writable: ptr.Of(m.Writable)}
+		lm := limatype.Mount{Location: expanded.Location, Writable: new(m.Writable)}
 		// Leave mountPoint unset for the common case: Lima then defaults it to
 		// the location, which is what makes a host-path `docker -v` bind resolve
 		// inside the guest.
 		if m.MountPoint != "" {
-			lm.MountPoint = ptr.Of(m.MountPoint)
+			lm.MountPoint = new(m.MountPoint)
 		}
 		mounts = append(mounts, lm)
 	}
@@ -353,17 +352,17 @@ func Build(cfg *config.Config) *limatype.LimaYAML {
 	systemFalse := false
 
 	y := &limatype.LimaYAML{
-		VMType: ptr.Of(limatype.VZ),
-		CPUs:   ptr.Of(cfg.VM.CPUs),
-		Memory: ptr.Of(cfg.VM.Memory),
-		Disk:   ptr.Of(cfg.VM.Disk),
+		VMType: new(limatype.VZ),
+		CPUs:   new(cfg.VM.CPUs),
+		Memory: new(cfg.VM.Memory),
+		Disk:   new(cfg.VM.Disk),
 
 		// Force the guest username to "lima". By default Lima derives the guest
 		// user from the macOS host username (osutil.LimaUser), only falling back
 		// to "lima" when the host name is an invalid Linux username. Pinning it
 		// here makes the name deterministic so the SocketUser=lima drop-in below
 		// (and any other "lima" assumptions) hold on every host.
-		User: limatype.User{Name: ptr.Of("lima")},
+		User: limatype.User{Name: new("lima")},
 
 		Images: []limatype.Image{
 			{File: limatype.File{Location: ubuntuAMD64, Arch: limatype.X8664}},
@@ -371,7 +370,7 @@ func Build(cfg *config.Config) *limatype.LimaYAML {
 		},
 
 		// VZ uses virtiofs for best performance
-		MountType: ptr.Of(limatype.VIRTIOFS),
+		MountType: new(limatype.VIRTIOFS),
 
 		// vzNAT: host reaches VM on 192.168.105.2 via lima0 / bridge100
 		Networks: []limatype.Network{
@@ -418,8 +417,8 @@ func Build(cfg *config.Config) *limatype.LimaYAML {
 		y.AdditionalDisks = []limatype.Disk{
 			{
 				Name:   config.ImageDiskName(cfg.VM.Name),
-				Format: ptr.Of(true),
-				FSType: ptr.Of("ext4"),
+				Format: new(true),
+				FSType: new("ext4"),
 			},
 		}
 	}
