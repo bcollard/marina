@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/lima-vm/lima/v2/pkg/limatype"
-	"github.com/lima-vm/lima/v2/pkg/ptr"
 )
 
 // limaYAMLFixture mirrors the shape of a real marina-generated instance config:
@@ -99,9 +98,9 @@ func TestReadInstanceMountsAbsent(t *testing.T) {
 func TestWriteInstanceMountsPreservesRest(t *testing.T) {
 	path := writeFixture(t, limaYAMLFixture)
 	mounts := []limatype.Mount{
-		{Location: "/Users/tester/.marina/registry-cache", Writable: ptr.Of(true)},
-		{Location: "/Users/tester/projects", Writable: ptr.Of(true)},
-		{Location: "/Users/tester/conf", Writable: ptr.Of(false)},
+		{Location: "/Users/tester/.marina/registry-cache", Writable: new(true)},
+		{Location: "/Users/tester/projects", Writable: new(true)},
+		{Location: "/Users/tester/conf", Writable: new(false)},
 	}
 	if err := WriteInstanceMounts(path, mounts); err != nil {
 		t.Fatal(err)
@@ -135,7 +134,7 @@ func TestWriteInstanceMountsInsertsWhenAbsent(t *testing.T) {
 		"mounts:\n    - location: /Users/tester/.marina/registry-cache\n      writable: true\n", "", 1)
 	path := writeFixture(t, body)
 
-	mounts := []limatype.Mount{{Location: "/Users/tester/projects", Writable: ptr.Of(true)}}
+	mounts := []limatype.Mount{{Location: "/Users/tester/projects", Writable: new(true)}}
 	if err := WriteInstanceMounts(path, mounts); err != nil {
 		t.Fatal(err)
 	}
@@ -194,33 +193,33 @@ func TestMountsEqual(t *testing.T) {
 	}{
 		{
 			name: "identical",
-			a:    []limatype.Mount{{Location: "/a", Writable: ptr.Of(true)}},
-			b:    []limatype.Mount{{Location: "/a", Writable: ptr.Of(true)}},
+			a:    []limatype.Mount{{Location: "/a", Writable: new(true)}},
+			b:    []limatype.Mount{{Location: "/a", Writable: new(true)}},
 			want: true,
 		},
 		{
 			// Lima defaults writable to false, so nil and explicit false match.
 			name: "nil writable equals explicit false",
 			a:    []limatype.Mount{{Location: "/a"}},
-			b:    []limatype.Mount{{Location: "/a", Writable: ptr.Of(false)}},
+			b:    []limatype.Mount{{Location: "/a", Writable: new(false)}},
 			want: true,
 		},
 		{
 			// ...and mountPoint defaults to location.
 			name: "nil mountPoint equals explicit same path",
 			a:    []limatype.Mount{{Location: "/a"}},
-			b:    []limatype.Mount{{Location: "/a", MountPoint: ptr.Of("/a")}},
+			b:    []limatype.Mount{{Location: "/a", MountPoint: new("/a")}},
 			want: true,
 		},
 		{
 			name: "writable differs",
-			a:    []limatype.Mount{{Location: "/a", Writable: ptr.Of(true)}},
+			a:    []limatype.Mount{{Location: "/a", Writable: new(true)}},
 			b:    []limatype.Mount{{Location: "/a"}},
 			want: false,
 		},
 		{
 			name: "mountPoint differs",
-			a:    []limatype.Mount{{Location: "/a", MountPoint: ptr.Of("/b")}},
+			a:    []limatype.Mount{{Location: "/a", MountPoint: new("/b")}},
 			b:    []limatype.Mount{{Location: "/a"}},
 			want: false,
 		},
@@ -257,9 +256,9 @@ func TestDescribeMounts(t *testing.T) {
 		t.Errorf("empty = %q", got)
 	}
 	got := DescribeMounts([]limatype.Mount{
-		{Location: "/a", Writable: ptr.Of(true)},
+		{Location: "/a", Writable: new(true)},
 		{Location: "/b"},
-		{Location: "/c", MountPoint: ptr.Of("/mnt/c")},
+		{Location: "/c", MountPoint: new("/mnt/c")},
 	})
 	want := "    /a (rw)\n    /b (ro)\n    /c → /mnt/c (ro)"
 	if got != want {

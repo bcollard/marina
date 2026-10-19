@@ -9,8 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/lima-vm/lima/v2/pkg/hostagent"
 	"github.com/lima-vm/lima/v2/pkg/hostagent/api/server"
@@ -49,7 +50,9 @@ func runHostagent(cmd *cobra.Command, args []string) error {
 		} else if err != nil {
 			return fmt.Errorf("checking existing hostagent pidfile: %w", err)
 		}
-		if err := os.WriteFile(pidfile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+		// WritePIDFile records the boot session, so a pidfile left by a previous
+		// boot is discarded instead of matching a reused PID.
+		if err := store.WritePIDFile(pidfile, os.Getpid()); err != nil {
 			return err
 		}
 		defer os.RemoveAll(pidfile)
@@ -74,6 +77,8 @@ func runHostagent(cmd *cobra.Command, args []string) error {
 
 	stdout := &syncWriter{w: cmd.OutOrStdout()}
 	stderr := &syncWriter{w: cmd.ErrOrStderr()}
+	defer stdout.flush()
+	defer stderr.flush()
 	initHostagentLogrus(stderr)
 
 	var opts []hostagent.Opt
@@ -129,17 +134,50 @@ func initHostagentLogrus(stderr io.Writer) {
 	}
 }
 
-// syncWriter wraps an io.Writer and flushes after each write when possible.
+// syncInterval is how long syncWriter batches writes before flushing them.
+// Ported from Lima v2.2.1: an fsync per write serialised the hostagent behind
+// logrus's output mutex, and the port forwarder logs once per tunnel teardown,
+// so a burst of closing connections throttled all logging. The flush stays,
+// batched, because the event watcher follows these files.
+const syncInterval = 100 * time.Millisecond
+
+// syncWriter wraps an io.Writer and flushes it at most once per syncInterval.
 type syncWriter struct {
 	w io.Writer
+
+	mu    sync.Mutex
+	dirty bool
+	timer *time.Timer
 }
 
 func (w *syncWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	n, err := w.w.Write(p)
 	if err == nil {
-		if s, ok := w.w.(interface{ Sync() error }); ok {
-			_ = s.Sync()
+		w.dirty = true
+		if w.timer == nil {
+			w.timer = time.AfterFunc(syncInterval, w.flush)
 		}
 	}
 	return n, err
+}
+
+// flush stops the pending timer and syncs any writes in the current batch.
+func (w *syncWriter) flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	if !w.dirty {
+		return
+	}
+	if s, ok := w.w.(interface{ Sync() error }); ok {
+		_ = s.Sync()
+	}
+	w.dirty = false
 }
