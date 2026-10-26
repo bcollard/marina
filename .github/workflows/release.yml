@@ -1,9 +1,14 @@
 name: Release
 
+# Push a vX.Y.Z tag to build, sign with the Developer ID certificate, notarize
+# and publish. Run it by hand from the Actions tab to test signing and
+# notarization without publishing: goreleaser runs in snapshot mode and the
+# binaries are a downloadable artifact.
 on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
   contents: write  # needed to create the GitHub release and upload assets
@@ -35,6 +40,69 @@ jobs:
           # let tools that unpack the archive (syft) overwrite nothing by accident.
           chmod -R u+w .third_party_licenses
 
+      - name: Check the signing secrets exist
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          missing=""
+          for name in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD NOTARY_APPLE_ID NOTARY_TEAM_ID NOTARY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:${missing}"
+            exit 1
+          fi
+
+      - name: Import the Developer ID certificate into a temporary keychain
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "::add-mask::$keychain_password"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+          # Let codesign use the key without a GUI prompt, which CI cannot answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+
+          # Put it first in the search list, keeping the runner's own keychains.
+          existing="$(security list-keychains -d user | tr -d '"')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          if [ -z "$identity" ]; then
+            echo "::error::DEVELOPER_ID_P12_BASE64 holds no 'Developer ID Application' identity"
+            exit 1
+          fi
+          echo "MARINA_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Check the notarization credentials
+        # Fails in seconds instead of after both builds.
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          if ! xcrun notarytool history --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" > /dev/null; then
+            echo "::error::Apple rejected the NOTARY_* credentials. NOTARY_PASSWORD must be an app-specific password for NOTARY_APPLE_ID."
+            exit 1
+          fi
+
       - name: Install syft (SBOM generator for goreleaser)
         uses: anchore/sbom-action/download-syft@v0
 
@@ -42,7 +110,40 @@ jobs:
         uses: goreleaser/goreleaser-action@v7.3.0
         with:
           version: latest
-          args: release --clean
+          # A manual run builds, signs and notarizes but publishes nothing.
+          args: release --clean ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Read by scripts/sign-darwin.sh in the post-build hook.
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+
+      - name: Verify what was shipped
+        env:
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          for bin in dist/marina_darwin_*/marina; do
+            echo "== $bin"
+            codesign --verify --strict --verbose=2 "$bin"
+            codesign -dv "$bin" 2>&1 | grep -q "TeamIdentifier=$NOTARY_TEAM_ID"
+            codesign -d --entitlements - "$bin" 2>&1 | grep -q com.apple.security.virtualization
+            # Gatekeeper's verdict for a downloaded CLI: must say "Notarized Developer ID".
+            spctl --assess --type open --context context:primary-signature -vv "$bin" 2>&1 | tee /dev/stderr \
+              | grep -q "source=Notarized Developer ID"
+          done
+
+      - name: Upload the binaries (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: marina-snapshot
+          path: dist/marina_darwin_*/marina
+          retention-days: 7
+
+      - name: Remove the temporary keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then security delete-keychain "$KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/certificate.p12"

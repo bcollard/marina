@@ -27,11 +27,9 @@ builds:
       - -X main.date={{.Date}}
     hooks:
       post:
-        # Embed the com.apple.security.virtualization entitlement required to
-        # create VMs via Virtualization.framework.
-        # For production releases, replace "-" with your Developer ID certificate
-        # identity and add a notarize step; otherwise Gatekeeper will block the binary.
-        - cmd: codesign --sign - --entitlements entitlements.plist --force "{{ .Path }}"
+        # Signs with the virtualization entitlement: Developer ID + notarization
+        # in release CI (MARINA_SIGN_IDENTITY, NOTARY_*), ad-hoc otherwise.
+        - cmd: ./scripts/sign-darwin.sh "{{ .Path }}"
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
