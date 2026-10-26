@@ -64,7 +64,7 @@ func runDestroy(ctx context.Context) error {
 
 	// The resolver file would otherwise point macOS at an address nothing
 	// answers on, and every lookup under the zone would wait for a timeout.
-	if err := localdns.RemoveHostResolvers(term.IsTerminal(int(os.Stdin.Fd()))); err != nil {
+	if err := localdns.RemoveHostResolvers(cfg, term.IsTerminal(int(os.Stdin.Fd()))); err != nil {
 		slog.Warn("Failed to remove the marina resolver file (continuing)", "err", err)
 	}
 

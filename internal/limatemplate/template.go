@@ -198,17 +198,26 @@ fi
 # Increase inotify limits for kind
 sysctl -w fs.inotify.max_user_watches=524288
 sysctl -w fs.inotify.max_user_instances=512
-echo 'fs.inotify.max_user_watches=524288' >> /etc/sysctl.d/99-marina.conf
-echo 'fs.inotify.max_user_instances=512'  >> /etc/sysctl.d/99-marina.conf
+printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' > /etc/sysctl.d/99-marina.conf
 
 # Enable IP forwarding for host<->kind routing
 sysctl -w net.ipv4.ip_forward=1
 echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-marina-forward.conf
 
-# Install tools
+# Install tools, first boot only: Lima runs this script on every boot, and
+# apt-get update is a network round trip that would slow each one down.
+# ca-certificates is upgraded here because the cloud image's bundle is as old
+# as the image (the eMudhra distrust of 2026-10 shipped as an update); later
+# fixes arrive through unattended-upgrades. The registry mirrors read this
+# bundle, so it also decides what they trust.
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -q jq iptables curl net-tools python3
+if [ ! -e /var/lib/marina/.packages-installed ]; then
+  apt-get update -qq
+  apt-get install -y -q jq iptables curl net-tools python3
+  apt-get install -y -q --only-upgrade ca-certificates
+  mkdir -p /var/lib/marina
+  touch /var/lib/marina/.packages-installed
+fi
 
 # Docker socket permissions (allows lima user to use Docker without sudo)
 # The guest user is pinned to "lima" via user.name in the Lima YAML (see Build()).

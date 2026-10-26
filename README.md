@@ -93,6 +93,7 @@ This README is the quick tour. The full documentation lives at
 | kind | v0.32.0 | Kubernetes-in-Docker cluster manager |
 | kubectl | latest stable | Cluster management from within the VM |
 | jq, iptables, curl, net-tools, python3 | distro packages | Tooling for scripts and routing rules |
+| ca-certificates | upgraded on first boot | Trust store for dockerd, kind, kubectl and the registry mirrors |
 
 ---
 
@@ -600,6 +601,8 @@ marina registry clean-cache   # remove all mirror cache dirs + containers; run '
 ```
 
 Mirror cache data is stored at `~/.marina/registry-cache/<mirror-name>/` by default (`cacheStorage: "host"`), virtiofs-mounted into the VM and bind-mounted into each registry container. Blobs survive `marina down`/`up` cycles and even `marina destroy`.
+
+The mirrors trust the VM's CA bundle, not the one in the `registry:2` image (Alpine 3.18, end-of-life), so a `ca-certificates` update in the VM — such as a distrusted root — reaches them on the next VM restart.
 
 ### Local DNS (`network.dns`)
 
