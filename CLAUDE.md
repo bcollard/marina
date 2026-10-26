@@ -323,8 +323,13 @@ The process doesn't have the com.apple.security.virtualization entitlement."
 `make build` handles this; a bare `go build -o /tmp/marina ./cmd/marina` does not:
 
 ```sh
-codesign --sign - --entitlements entitlements.plist --force <binary>
+./scripts/sign-darwin.sh <binary>     # ad-hoc; MARINA_SIGN_IDENTITY="Developer ID Application: …" for Developer ID
 ```
+
+`scripts/sign-darwin.sh` is the one signing path (Makefile, goreleaser hook). `make build`
+picks the keychain's Developer ID identity when there is one (team `PZARL6555S`), ad-hoc
+otherwise. Verified: a Developer ID + hardened-runtime build starts a VM (the
+hardened runtime is what notarization requires).
 
 Read-only commands (`status`, `doctor`, `cluster list`, `fleet export`,
 `disk resize-image`) work fine unsigned, so an unsigned build can look healthy
@@ -972,6 +977,19 @@ Verify behavior end-to-end against the live VM before cutting a release (see the
 - `goreleaser` for cross-compilation and GitHub releases
 - Triggered by pushing a `vX.Y.Z` tag (`.github/workflows/release.yml`); default bump is a patch on the latest tag.
 - **Tags must be annotated** — `git tag -a vX.Y.Z -m "..."`. A lightweight `git tag vX.Y.Z` fails with `fatal: no tag message?` (repo is configured to require annotated tags).
+- **Releases are Developer ID signed and notarized** (since v0.3.6). `release.yml` imports
+  the certificate into a temporary keychain, and `scripts/sign-darwin.sh` (goreleaser
+  post-build hook) signs with hardened runtime + secure timestamp and submits each binary
+  to `notarytool`. Secrets, same names as Pastiche: `DEVELOPER_ID_P12_BASE64`,
+  `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`, `NOTARY_PASSWORD`.
+  A bare Mach-O cannot be stapled; Gatekeeper fetches the ticket online on first run.
+  `workflow_dispatch` runs the whole thing in snapshot mode (publishes nothing,
+  uploads the binaries as an artifact) — use it to test signing changes.
+- **Why sign at all:** not for the data path. In direct mode (`disablePortMirroring: true`)
+  `kubectl`/`curl` connect to the VM themselves, so marina's signature cannot change what
+  an EDR allows. Measured 2026-10-26 on a Mac with Falcon 8.10 + Kandji: Apple-signed curl,
+  ad-hoc kubectl and an ad-hoc Go binary all reached the lima0 IP and a MetalLB VIP. The
+  value is a stable team ID for an MDM/EDR allowlist and Gatekeeper on managed Macs.
 - Homebrew distribution is a **Cask**, not a Formula: `bcollard/homebrew-marina` → `Casks/marina.rb`. goreleaser bumps it automatically on release. Users install/upgrade with `brew upgrade --cask marina` (or `brew reinstall --cask marina`).
 - **Ship the website changelog *before* pushing the tag.** `../marina-website` needs a `docs/changelog.html` entry (plus any page whose documented defaults or commands changed) per its own `CLAUDE.md`. Merging that first means the docs are live when the binaries appear, instead of briefly describing a version nobody can install.
 - A tag pushed by mistake can be recalled if you are quick: `gh run cancel <id>`, then `git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`. Check `gh release view` and the Cask version first — once goreleaser has published, retagging is no longer clean and the fix is a new patch release.
