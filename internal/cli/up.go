@@ -154,7 +154,7 @@ func runUp(ctx context.Context, showVMLogs bool) error {
 	}
 
 	// 7. Ensure pull-through mirrors.
-	if err := registry.EnsureRegistries(ctx, g, cfg.Registries, containerProxyEnv, cfg.VM.CACerts.Enabled()); err != nil {
+	if err := registry.EnsureRegistries(ctx, g, cfg.Registries, containerProxyEnv); err != nil {
 		return fmt.Errorf("registries: %w", err)
 	}
 

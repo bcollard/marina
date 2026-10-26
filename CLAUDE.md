@@ -269,13 +269,20 @@ See `config.example.yaml` for the full annotated reference.
 
 ---
 
-## VM provision script (first boot, runs as root)
+## VM provision script (runs as root on every boot)
 
-Installed by `limatemplate.Build()` as a Lima `provision.system` script:
+Installed by `limatemplate.Build()` as a Lima `provision.system` script. **Lima
+runs it on every boot**, not just the first, so each step is guarded:
 
 1. Set inotify limits (`fs.inotify.max_user_watches=524288`, `max_user_instances=512`)
 2. Enable `net.ipv4.ip_forward=1`
-3. Install: `jq`, `iptables`, `curl`, `net-tools`, `python3`
+3. **First boot only** (marker `/var/lib/marina/.packages-installed`): `apt-get update`,
+   install `jq`, `iptables`, `curl`, `net-tools`, `python3`, and
+   `--only-upgrade ca-certificates`. The cloud image's trust store is as old as the
+   image (the 2026-10 eMudhra distrust shipped as an update); later fixes come from
+   unattended-upgrades. Keeping `apt-get update` off later boots saves a network
+   round trip per boot. The script is baked into the instance at creation, so this
+   reaches new VMs only.
 4. Configure Docker socket permissions via `docker.socket.d/override.conf` (`SocketUser=lima` — the guest user is pinned to `lima` via `user.name` in the Lima YAML; by default Lima derives it from the macOS host username, which would break the `SocketUser=lima` assumption on hosts whose username is a valid Linux name)
 5. Install Docker via `get.docker.com`
 6. Install kind CLI `v0.32.0`
@@ -518,6 +525,10 @@ Facts that shaped it, all verified on the live VM:
   written once, and `up` skips sudo when it matches. No NOPASSWD rule on purpose:
   a passwordless `tee` on `/etc/resolver` would let anything on the Mac redirect
   any domain. Non-interactive runs use `sudo -n` and warn.
+- **Cleanup only touches this VM's files** — a marker *and* `nameserver <this
+  VM's DNS IP>` (`isOwnResolverFile`). Until v0.3.5 the marker alone matched, so a
+  second VM (own config, own CIDR) with `dns.enabled: false` deleted the first
+  VM's file on `up`.
 - **The VM resolves the zone via a route-only link domain** (`resolvectl dns/
   domain ~<domain>/default-route false` on the kind bridge), re-applied by the
   no-NAT script because Docker recreates the bridge link on restart.
@@ -783,8 +794,18 @@ complication:
 | Consumer | How it gets the CA |
 |---|---|
 | The VM (dockerd) | Lima `caCerts` → cloud-init `ca_certs` at first boot; `cli.reconcileCACerts` on later `up` runs |
-| Registry mirrors | The guest bundle `/etc/ssl/certs/ca-certificates.crt` is bind-mounted read-only (Debian and Alpine both read that path) |
+| Registry mirrors | Always (since v0.3.5): the guest bundle mounted read-only at `/etc/marina/ca-certificates.crt`, with `SSL_CERT_FILE`/`SSL_CERT_DIR` pointing at it (`registry.caTrustArgs`) |
 | kind nodes | `kind.configureCACerts` writes the PEM into each node and runs `update-ca-certificates`, then restarts containerd — a node is a container with its own store |
+
+**The mirrors trust the guest's roots instead of their own, not in addition.**
+`registry:2` is Alpine 3.18 (end-of-life), so its bundle never loses a distrusted
+root. Mounting over its `/etc/ssl/certs/ca-certificates.crt` (the pre-v0.3.5
+approach) only *adds* roots: Go reads the bundle file **and** every file in
+`/etc/ssl/certs`, where Alpine keeps ~150 individual roots. Measured: 149 → 157
+roots, emSign G3 still trusted; with the env override, 120 roots, none distrusted.
+A container restart re-binds the path, so a VM restart applies a
+`ca-certificates` update (verified: a renamed-over file shows up after
+`docker restart`).
 
 Lima's `caCerts` is required rather than merely convenient: cloud-init installs
 Docker from `get.docker.com` during first boot, which fails TLS verification

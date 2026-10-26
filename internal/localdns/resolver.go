@@ -62,7 +62,7 @@ func EnsureHostResolver(cfg *config.Config, interactive bool) error {
 		want = ResolverPath(cfg)
 	}
 
-	for _, stale := range staleResolverFiles(want) {
+	for _, stale := range staleResolverFiles(want, cfg.DNSServerIP()) {
 		slog.Info("Removing marina resolver file", "path", stale)
 		if err := hostsudo.Run(interactive, nil, "/bin/rm", "-f", stale); err != nil {
 			return fmt.Errorf("removing %s: %w", stale, err)
@@ -82,10 +82,10 @@ func EnsureHostResolver(cfg *config.Config, interactive bool) error {
 	return nil
 }
 
-// RemoveHostResolvers deletes every resolver file marina wrote. Used by
-// `marina destroy`.
-func RemoveHostResolvers(interactive bool) error {
-	for _, p := range staleResolverFiles("") {
+// RemoveHostResolvers deletes the resolver files this VM's marina wrote. Used
+// by `marina destroy`.
+func RemoveHostResolvers(cfg *config.Config, interactive bool) error {
+	for _, p := range staleResolverFiles("", cfg.DNSServerIP()) {
 		if err := hostsudo.Run(interactive, nil, "/bin/rm", "-f", p); err != nil {
 			return err
 		}
@@ -93,8 +93,11 @@ func RemoveHostResolvers(interactive bool) error {
 	return nil
 }
 
-// staleResolverFiles lists marina-written resolver files other than keep.
-func staleResolverFiles(keep string) []string {
+// staleResolverFiles lists the marina-written resolver files other than keep
+// that point at nameserver — this VM's DNS server. Another marina VM (its own
+// config, its own kind CIDR) writes the same marker; matching on the marker
+// alone made a second VM with network.dns off delete the first one's file.
+func staleResolverFiles(keep, nameserver string) []string {
 	entries, err := os.ReadDir(ResolverDir)
 	if err != nil {
 		return nil
@@ -106,9 +109,18 @@ func staleResolverFiles(keep string) []string {
 			continue
 		}
 		b, err := os.ReadFile(p)
-		if err == nil && (strings.HasPrefix(string(b), resolverMarker) || strings.HasPrefix(string(b), legacyResolverMarker)) {
+		if err == nil && isOwnResolverFile(string(b), nameserver) {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// isOwnResolverFile reports whether a resolver file's content was written by
+// marina (or klimax) for the DNS server at nameserver.
+func isOwnResolverFile(content, nameserver string) bool {
+	if !strings.HasPrefix(content, resolverMarker) && !strings.HasPrefix(content, legacyResolverMarker) {
+		return false
+	}
+	return nameserver != "" && strings.Contains(content, "\nnameserver "+nameserver+"\n")
 }

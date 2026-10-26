@@ -177,3 +177,22 @@ func TestExternalDNSManifestFleet(t *testing.T) {
 		t.Error("no fleet must not add an empty-fleet filter")
 	}
 }
+
+func TestIsOwnResolverFile(t *testing.T) {
+	cases := []struct {
+		name, content, nameserver string
+		want                      bool
+	}{
+		{"own", resolverMarker + " — local DNS\nnameserver 172.30.255.53\n", "172.30.255.53", true},
+		{"klimax", legacyResolverMarker + " — local DNS\nnameserver 172.30.255.53\n", "172.30.255.53", true},
+		{"other VM", resolverMarker + " — local DNS\nnameserver 172.31.255.53\n", "172.30.255.53", false},
+		{"prefix of another IP", resolverMarker + "\nnameserver 172.30.255.530\n", "172.30.255.53", false},
+		{"not marina", "nameserver 172.30.255.53\n", "172.30.255.53", false},
+		{"no nameserver known", resolverMarker + "\nnameserver 172.30.255.53\n", "", false},
+	}
+	for _, c := range cases {
+		if got := isOwnResolverFile(c.content, c.nameserver); got != c.want {
+			t.Errorf("%s: isOwnResolverFile = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
