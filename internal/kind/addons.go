@@ -30,15 +30,14 @@ func InstallMetricsServer(ctx context.Context, g *guest.Client, clusterName, ver
 
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
-KIND_KUBECONFIG=/tmp/marina-kube-%s.yaml
-kind get kubeconfig --name %s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG}
+%s
 
 kubectl --kubeconfig ${KIND_KUBECONFIG} apply -f %s
 
 %skubectl --kubeconfig ${KIND_KUBECONFIG} -n kube-system rollout status deploy/metrics-server --timeout=180s
 
 echo "metrics-server installed on cluster %s"
-`, clusterName, clusterName, url, insecurePatch, clusterName)
+`, guest.KindKubeconfig("KIND_KUBECONFIG", clusterName), url, insecurePatch, clusterName)
 
 	return g.RunScript(ctx, fmt.Sprintf("install metrics-server on cluster %q", clusterName), script)
 }

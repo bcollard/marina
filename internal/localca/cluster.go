@@ -152,5 +152,5 @@ kubectl --kubeconfig ${KIND_KUBECONFIG} -n %[3]s get secret %[4]s -o json \
 }
 
 func kubeconfigPrelude(cluster string) string {
-	return fmt.Sprintf("KIND_KUBECONFIG=/tmp/marina-kube-%[1]s.yaml; kind get kubeconfig --name %[1]s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG};", cluster)
+	return guest.KindKubeconfig("KIND_KUBECONFIG", cluster) + ";"
 }

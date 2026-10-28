@@ -266,10 +266,9 @@ func LabelNodes(ctx context.Context, g *guest.Client, clusterName string, args [
 	slog.Info("Labeling cluster nodes", "cluster", clusterName, "ops", len(args))
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
-KIND_KUBECONFIG=/tmp/marina-kube-%s.yaml
-kind get kubeconfig --name %s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG}
+%s
 kubectl --kubeconfig ${KIND_KUBECONFIG} label nodes --all --overwrite %s
-`, clusterName, clusterName, strings.Join(args, " "))
+`, guest.KindKubeconfig("KIND_KUBECONFIG", clusterName), strings.Join(args, " "))
 
 	return g.RunScript(ctx, fmt.Sprintf("label nodes on cluster %q", clusterName), script)
 }
@@ -286,8 +285,7 @@ func installMetalLB(ctx context.Context, g *guest.Client, cl config.ClusterConfi
 
 	metallbScript := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
-KIND_KUBECONFIG=/tmp/marina-kube-%s.yaml
-kind get kubeconfig --name %s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG}
+%s
 
 kubectl --kubeconfig ${KIND_KUBECONFIG} apply \
   -f https://raw.githubusercontent.com/metallb/metallb/%s/config/manifests/metallb-native.yaml
@@ -336,7 +334,7 @@ rm -f ${MARINA_POOL}
 
 echo "MetalLB configured for cluster %s"
 `,
-		cl.Name, cl.Name,
+		guest.KindKubeconfig("KIND_KUBECONFIG", cl.Name),
 		version,
 		poolStart1, poolEnd1,
 		poolStart2, poolEnd2,
@@ -428,8 +426,7 @@ func ApplyCoreDNSPatch(ctx context.Context, g *guest.Client, clusterName string,
 
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
-KIND_KUBECONFIG=/tmp/marina-kube-%s.yaml
-kind get kubeconfig --name %s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG}
+%s
 cat <<'EOF' | kubectl --kubeconfig ${KIND_KUBECONFIG} apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -446,7 +443,7 @@ kubectl --kubeconfig ${KIND_KUBECONFIG} \
 kubectl --kubeconfig ${KIND_KUBECONFIG} \
   -n kube-system rollout status deployment/coredns --timeout=60s
 echo "CoreDNS patched for cluster %s"
-`, clusterName, clusterName, indentedCorefile, clusterName)
+`, guest.KindKubeconfig("KIND_KUBECONFIG", clusterName), indentedCorefile, clusterName)
 
 	return g.RunScript(ctx, fmt.Sprintf("CoreDNS patch for cluster %q", clusterName), script)
 }

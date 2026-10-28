@@ -163,12 +163,11 @@ func InstallExternalDNS(ctx context.Context, g *guest.Client, cfg *config.Config
 	slog.Info("Installing ExternalDNS for local DNS", "cluster", cluster, "zone", cfg.ClusterDNSZone(cluster), "fleet", fleet)
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
-KIND_KUBECONFIG=/tmp/marina-kube-%[1]s.yaml
-kind get kubeconfig --name %[1]s | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > ${KIND_KUBECONFIG}
+%[4]s
 cat <<'MANIFEST_EOF' | kubectl --kubeconfig ${KIND_KUBECONFIG} apply -f -
 %[2]sMANIFEST_EOF
 kubectl --kubeconfig ${KIND_KUBECONFIG} -n %[3]s rollout status deploy/external-dns --timeout=180s
-`, cluster, ExternalDNSManifest(cfg, cluster, fleet), ExternalDNSNamespace)
+`, cluster, ExternalDNSManifest(cfg, cluster, fleet), ExternalDNSNamespace, guest.KindKubeconfig("KIND_KUBECONFIG", cluster))
 	return g.RunScript(ctx, fmt.Sprintf("install ExternalDNS on cluster %q", cluster), script)
 }
 
