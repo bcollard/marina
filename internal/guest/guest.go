@@ -249,3 +249,18 @@ func guestUser(inst *limatype.Instance) string {
 	}
 	return "ubuntu"
 }
+
+// KindKubeconfig returns shell that writes cluster's admin kubeconfig to a
+// temp file and stores the path in the variable varName. cluster is a literal
+// name or a shell expansion such as "$c".
+//
+// The path carries the caller's uid. Root scripts (RunScript) and lima-user
+// commands (Run) used to share /tmp/marina-kube-<cluster>.yaml, and Ubuntu's
+// fs.protected_regular=2 stops even root from opening, for writing, a file in
+// sticky /tmp owned by another user: a lima-written file failed every later
+// root step of `marina fleet create`, and a root-written one silently left the
+// lima side reading stale credentials. umask 077: the file holds admin
+// credentials.
+func KindKubeconfig(varName, cluster string) string {
+	return fmt.Sprintf(`%[1]s="/tmp/marina-kube-$(id -u)-%[2]s.yaml"; (umask 077; kind get kubeconfig --name "%[2]s" | sed 's|https://0.0.0.0:|https://127.0.0.1:|g' > "$%[1]s")`, varName, cluster)
+}
