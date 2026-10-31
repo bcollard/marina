@@ -31,7 +31,7 @@ func runDown(ctx context.Context, removeRoute bool) error {
 	}
 
 	if removeRoute {
-		if err := routing.DeleteRoute(cfg.Network.KindBridgeCIDR); err != nil {
+		if err := routing.DeleteRoute(cfg.Network.KindBridgeCIDR, isInteractive()); err != nil {
 			slog.Warn("Failed to delete route (continuing)", "err", err)
 		}
 	}

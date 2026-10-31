@@ -372,7 +372,7 @@ func fixRoute(ctx context.Context, env *doctorEnv) error {
 	if err != nil {
 		return fmt.Errorf("resolving lima0 IP: %w", err)
 	}
-	return routing.EnsureRoute(env.cfg.Network.KindBridgeCIDR, ip)
+	return routing.EnsureRoute(env.cfg.Network.KindBridgeCIDR, ip, isInteractive())
 }
 
 // printDoctorText renders the human-readable report. The per-check wording is
