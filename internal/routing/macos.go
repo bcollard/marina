@@ -16,7 +16,12 @@ import (
 // it does NOT invoke sudo, so re-running `marina up` against an already-running VM
 // never prompts for a password. Only a missing or stale (wrong-gateway) route
 // triggers the sudo delete+add.
-func EnsureRoute(cidr, lima0IP string) error {
+//
+// interactive=false (no TTY: launchd autostart, CI, an agent's shell) runs
+// `sudo -n`, which succeeds through the `marina sudoers` NOPASSWD rules (-n is a
+// sudo option, so the rules still match) and otherwise fails at once. Plain sudo
+// there waits on a password or Touch ID prompt nobody answers, and `up` hangs.
+func EnsureRoute(cidr, lima0IP string, interactive bool) error {
 	if gw, ok := RouteGateway(cidr); ok {
 		if gw == lima0IP {
 			slog.Info("macOS route already present and correct — skipping", "cidr", cidr, "via", lima0IP)
@@ -28,15 +33,32 @@ func EnsureRoute(cidr, lima0IP string) error {
 	slog.Info("Ensuring macOS route", "cidr", cidr, "via", lima0IP)
 
 	// Best-effort delete of any stale route.
-	del := exec.Command("sudo", "/sbin/route", "-n", "delete", "-net", cidr)
+	del := sudoRoute(interactive, "-n", "delete", "-net", cidr)
 	_ = del.Run() // ignore errors (route may not exist)
 
-	add := exec.Command("sudo", "/sbin/route", "-n", "add", "-net", cidr, lima0IP)
+	add := sudoRoute(interactive, "-n", "add", "-net", cidr, lima0IP)
 	slog.Debug("route add", "cmd", strings.Join(add.Args, " "))
 	if out, err := add.CombinedOutput(); err != nil {
+		if !interactive {
+			return fmt.Errorf("adding route %s via %s: %w\n%s(no terminal to ask for a password: install the NOPASSWD rules printed by `marina sudoers`, or run interactively)", cidr, lima0IP, err, out)
+		}
 		return fmt.Errorf("adding route %s via %s: %w\n%s", cidr, lima0IP, err, out)
 	}
 	return nil
+}
+
+// sudoRoute builds `sudo [-n] /sbin/route <args>`. The /sbin/route arguments
+// must stay exactly what `marina sudoers` emits, or the NOPASSWD rules miss.
+func sudoRoute(interactive bool, routeArgs ...string) *exec.Cmd {
+	return exec.Command("sudo", sudoRouteArgs(interactive, routeArgs...)...)
+}
+
+func sudoRouteArgs(interactive bool, routeArgs ...string) []string {
+	args := []string{}
+	if !interactive {
+		args = append(args, "-n")
+	}
+	return append(append(args, "/sbin/route"), routeArgs...)
 }
 
 // RouteGateway returns the gateway of the macOS route that currently serves the
@@ -77,9 +99,10 @@ func RouteGateway(cidr string) (string, bool) {
 }
 
 // DeleteRoute removes the macOS route for cidr. Best-effort; ignores "not found".
-func DeleteRoute(cidr string) error {
+// interactive has the same meaning as in EnsureRoute.
+func DeleteRoute(cidr string, interactive bool) error {
 	slog.Info("Deleting macOS route", "cidr", cidr)
-	del := exec.Command("sudo", "/sbin/route", "-n", "delete", "-net", cidr)
+	del := sudoRoute(interactive, "-n", "delete", "-net", cidr)
 	if out, err := del.CombinedOutput(); err != nil {
 		slog.Warn("route delete failed (may not exist)", "cidr", cidr, "err", err, "output", string(out))
 	}

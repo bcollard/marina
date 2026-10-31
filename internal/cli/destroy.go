@@ -69,7 +69,7 @@ func runDestroy(ctx context.Context) error {
 	}
 
 	// Remove macOS route.
-	if err := routing.DeleteRoute(cfg.Network.KindBridgeCIDR); err != nil {
+	if err := routing.DeleteRoute(cfg.Network.KindBridgeCIDR, isInteractive()); err != nil {
 		slog.Warn("Failed to delete route (continuing)", "err", err)
 	}
 

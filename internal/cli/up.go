@@ -179,7 +179,7 @@ func runUp(ctx context.Context, showVMLogs bool) error {
 	}
 
 	// 10. Add macOS route for kind CIDR → lima0.
-	if err := routing.EnsureRoute(cfg.Network.KindBridgeCIDR, lima0IP); err != nil {
+	if err := routing.EnsureRoute(cfg.Network.KindBridgeCIDR, lima0IP, isInteractive()); err != nil {
 		return fmt.Errorf("macOS route: %w", err)
 	}
 
