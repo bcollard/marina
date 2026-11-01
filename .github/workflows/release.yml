@@ -17,11 +17,11 @@ jobs:
   release:
     runs-on: macos-latest  # ARM64; macOS system clang cross-compiles to amd64 transparently
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # full history so goreleaser can generate the changelog
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Track the latest stable Go rather than go.mod's floor: stdlib CVEs are
           # fixed by patch releases, and pinning the build toolchain to the module's
@@ -104,10 +104,10 @@ jobs:
           fi
 
       - name: Install syft (SBOM generator for goreleaser)
-        uses: anchore/sbom-action/download-syft@v0
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7.3.0
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: latest
           # A manual run builds, signs and notarizes but publishes nothing.
@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload the binaries (manual runs only)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: marina-snapshot
           path: dist/marina_darwin_*/marina
