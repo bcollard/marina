@@ -394,10 +394,12 @@ marina down --remove-route             Stop VM and remove macOS host route (requ
 marina destroy                         Delete all clusters, delete VM, remove route
 marina status                          Show VM state, host mounts, local DNS, clusters, route, iptables
   -o text|json|yaml                    Output format (json/yaml for tooling; `clusters.names` is always a list)
-marina doctor                          Diagnose common issues (VM, route, iptables, IP forwarding, Rosetta host+VM state, local DNS path,
-                                       local DNS through the macOS resolver — catches MDM encrypted-DNS profiles)
+marina doctor                          Diagnose common issues (VM, route, iptables, IP forwarding, the VM's internet access (`outbound`),
+                                       Rosetta host+VM state, local DNS path, local DNS through the macOS resolver — catches MDM
+                                       encrypted-DNS profiles)
   -o text|json|yaml                    Output format; each check has a stable `id`, `status`, `fixable`
-  --fix                                Apply the repairs marina can perform: route, iptables, IP forwarding.
+  --fix                                Apply the repairs marina can perform: route, iptables, IP forwarding, and a default
+                                       route via eth0 when lima0 has lost internet access (runtime only; a restart drops it).
                                        VM creation/start, Rosetta install and hostagent cleanup stay advisory.
 marina version                         Print version
 marina shell                           Open interactive SSH session in the VM
@@ -951,6 +953,13 @@ The `resize2fs` in the mount script is belt-and-braces only.
 - Docker rewrites iptables on restart → handled by `ExecStartPost` drop-in.
 - MetalLB (and metrics-server) readiness waits are `180s` — their images pull from quay.io through the mirror on first use (controller must pull+run before speaker's `memberlist` secret exists, then speaker pulls); the mirror caches them so subsequent clusters are fast. (The multi-minute timeouts seen historically were actually the hostname-shadowing mirror-bypass bug — direct, uncached pulls — not a genuinely slow mirror.) `kind create cluster --wait 5m` covers the core node images (preloaded).
 - macOS VPN software can conflict with the host route → `marina doctor` warns.
+- **The VM can lose internet access through lima0 while the Mac→VM path keeps working.** macOS stops forwarding
+  VM-originated traffic on the vzNAT bridge (seen 2026-11-05 after a Wi-Fi change with the VM up ~2 days;
+  Falcon + Kandji were running, so EDR filtering is not ruled out). `docker pull`/`docker login` fail, kubectl
+  and the clusters do not. eth0 (Lima user-mode network, gateway `192.168.5.2`) still works. Doctor check
+  `outbound` probes with `curl -4` (the VM also has NAT66 IPv6 on lima0, which hid an IPv4-only outage in
+  testing; ping is useless — macOS drops ICMP to `192.168.64.1` even when healthy). `--fix` adds
+  `default via <eth0 gw> dev eth0 metric 50`; `marina down && marina up` restores lima0.
 - `podSubnet: 10.1<num>.0.0/16` overlaps with `serviceSubnet: 10.<num+10>.0.0/16` for num≥10. In practice keep num 1–9 per VM.
 - The vzNAT subnet is macOS-assigned and not configurable; do not overlap `kindBridgeCIDR` with it (the macOS-assigned range is typically `192.168.64.x` but may vary).
 - `DOCKER_HOST` env var overrides the active Docker context — use one mechanism or the other, not both.

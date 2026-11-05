@@ -343,7 +343,7 @@ hidden. Use `--lima-log-level trace|debug|info|warn|error|off` to surface them
 | `marina down --remove-route` | Stop the VM and remove the macOS host route (requires sudo) |
 | `marina destroy` | Stop + delete VM, delete all clusters, remove host route |
 | `marina status` | Show VM state, host mounts, clusters, route, and iptables rule presence (`-o text\|json\|yaml`) |
-| `marina doctor` | Diagnose common issues (VM, route, iptables, IP forwarding, Rosetta, local DNS through the macOS resolver); `--fix` applies what marina can repair, `-o text\|json\|yaml` |
+| `marina doctor` | Diagnose common issues (VM, route, iptables, IP forwarding, the VM's internet access, Rosetta, local DNS through the macOS resolver); `--fix` applies what marina can repair, `-o text\|json\|yaml` |
 | `marina version` | Print the marina version |
 | `marina shell` | Open an interactive SSH session in the VM |
 | `marina shell <cmd> [args...]` | Run a command in the VM and exit with its exit code |
