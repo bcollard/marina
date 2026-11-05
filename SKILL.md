@@ -163,6 +163,7 @@ Public images pull transparently through the built-in pull-through mirrors (dock
 - Registry mirrors: cluster pulls use all of them (containerd `certs.d` per node), and so does `docker pull` on the VM (dockerd's own `/etc/docker/certs.d`).
 - marina can be used as a plain Docker host, not just for clusters: `marina docker-context` then `docker ps`. Set `network.disablePortMirroring: false` if you want `-p 8080:80` to land on the Mac's `localhost` the way Docker Desktop does. On an existing VM, `marina up` offers a restart to apply the change; clusters keep the API address they were created with, so decide before building a lab on it.
 - Behind a TLS-intercepting proxy, add its root CA with `vm.caCerts.files` — marina installs it in the VM, the registry mirrors and every kind node. Without it, pulls fail with `x509: certificate signed by unknown authority` even when the proxy itself is correct.
+- `docker pull` / `docker login` time out while kubectl still works: the VM lost internet access through lima0 (macOS stops forwarding after a Wi-Fi/VPN change or sleep). `marina doctor` reports it (check `outbound`); `marina down && marina up` restores it, `marina doctor --fix` routes through eth0 until the next restart.
 - Behind a corporate proxy: marina uses the Mac's system proxy automatically; set `network.proxy` only to override it. `marina doctor` reports which proxy dockerd is actually using. If shell commands work but image pulls fail, dockerd never got the proxy — `marina up` writes the systemd drop-in that fixes it.
 - Image store full (`/var/lib/containerd`, the `vm.imageDisk` data disk — this is where OCI layers actually live, not the root disk): `marina shell df -h /var/lib/containerd`, then `marina down && marina disk resize-image 30GiB && marina up`. Editing `vm.imageDisk` in the config alone does nothing to a disk that already exists.
 - If `marina up` prompts for a sudo password (it needs root only for the macOS host route), install the rules once with `marina sudoers | sudo tee /etc/sudoers.d/marina >/dev/null && sudo chmod 0440 /etc/sudoers.d/marina`. Required for `marina autostart`, since launchd cannot answer a prompt.
@@ -171,7 +172,7 @@ Public images pull transparently through the built-in pull-through mirrors (dock
 
 ```bash
 marina doctor              # Diagnose route, iptables, VPN conflicts, hostagent collisions, etc.
-marina doctor --fix        # Apply what marina can repair (route, iptables, IP forwarding).
+marina doctor --fix        # Apply what marina can repair (route, iptables, IP forwarding, VM internet access).
 marina doctor -o json      # Machine-readable checks: stable id, status, fixable.
 marina status              # VM state, clusters, route, iptables snapshot.
 marina status -o json      # Same, machine-readable — prefer this when scripting.

@@ -87,7 +87,9 @@ func newDoctorCmd() *cobra.Command {
 		Long: `Diagnose common marina problems and print a fix for each failure.
 
 With --fix, marina applies the repairs it can perform itself: the macOS host
-route, the iptables no-NAT exemption, and guest IP forwarding. Everything else
+route, the iptables no-NAT exemption, guest IP forwarding, and a default route
+via eth0 when the VM has lost internet access through lima0 (it lasts until the
+VM restarts; 'marina down && marina up' restores lima0). Everything else
 (creating or starting the VM, installing Rosetta, clearing a stale hostagent)
 stays advisory — those either need a full 'marina up' or are too destructive to
 run without you asking.
@@ -98,7 +100,7 @@ The macOS route fix shells out to sudo, exactly as 'marina up' does.`,
 		},
 	}
 	cmd.Flags().StringVarP(&outputFmt, "output", "o", "text", "Output format: text, json, yaml")
-	cmd.Flags().BoolVar(&fix, "fix", false, "Apply the fixes marina can perform itself (route, iptables, IP forwarding)")
+	cmd.Flags().BoolVar(&fix, "fix", false, "Apply the fixes marina can perform itself (route, iptables, IP forwarding, VM internet access)")
 	return cmd
 }
 
@@ -261,6 +263,9 @@ func diagnose(ctx context.Context) (*doctorReport, *doctorEnv, error) {
 		})
 	}
 
+	// The VM's own internet access, which dockerd and the mirrors depend on.
+	rep.Checks = append(rep.Checks, checkOutbound(ctx, g))
+
 	// Proxy. Reported rather than judged: marina cannot tell a misconfigured
 	// proxy from a correct one, but "which proxy is dockerd actually using"
 	// is the first question when pulls fail on a corporate network.
@@ -341,6 +346,12 @@ func applyDoctorFixes(ctx context.Context, rep *doctorReport, env *doctorEnv) {
 			reconcileLocalCA(env.cfg)
 			if !caStore(env.cfg).Trusted() {
 				err = fmt.Errorf("the root is still not trusted")
+			}
+		case checkIDOutbound:
+			if env.guest == nil {
+				err = fmt.Errorf("VM is not running")
+			} else {
+				err = fixOutbound(ctx, env.guest)
 			}
 		case checkIDIPForward:
 			if env.guest == nil {
