@@ -236,7 +236,7 @@ network:
                                      # NOT VM-level: reconciled on every `marina up`; false removes everything
 
 kind:
-  nodeVersion: "v1.36.1"             # kindest/node image tag (default)
+  nodeVersion: "v1.37.0"             # kindest/node image tag (default)
   metalLBVersion: "v0.16.1"          # MetalLB manifest version (default)
   customDnsResolvers:                # per-zone upstream resolvers; resolvers default to 8.8.8.8/8.8.4.4 if omitted
     # - domain: "runlocal.dev"       # example; empty by default in code
@@ -285,7 +285,7 @@ runs it on every boot**, not just the first, so each step is guarded:
    reaches new VMs only.
 4. Configure Docker socket permissions via `docker.socket.d/override.conf` (`SocketUser=lima` — the guest user is pinned to `lima` via `user.name` in the Lima YAML; by default Lima derives it from the macOS host username, which would break the `SocketUser=lima` assumption on hosts whose username is a valid Linux name)
 5. Install Docker via `get.docker.com`
-6. Install kind CLI `v0.32.0`
+6. Install kind CLI `v0.33.0` (`marina up` replaces an older binary on existing VMs: `reconcileKindCLI`)
 7. Install kubectl (latest stable)
 
 ### Docker socket forwarding
@@ -938,6 +938,15 @@ Mirror registry containers (`registry-dockerio`, `registry-quayio`, `registry-gc
 
 > Changing `cacheStorage` after instance creation requires `marina destroy && marina up`.
 
+### Lima attaches the image disk with `mount: false`
+
+Since v0.3.10 (Lima v2.3) the disk entry carries `mount: false`, so Lima formats
+and grows it but no longer mounts it a second time at `/mnt/lima-<name>`.
+Lima's new `mountPoint` is deliberately unused: Lima mounts additional disks
+from cloud-final, after Docker, so `mountPoint: /var/lib/containerd` would
+start Docker on an empty image store (see `imageDiskProvisions`). VMs created
+earlier keep the old entry and the harmless double mount.
+
 ### Growing the image disk — Lima does the guest half
 
 `marina disk resize-image` only grows the **host-side** backing file. Do not add
@@ -968,6 +977,11 @@ The `resize2fs` in the mount script is belt-and-braces only.
 ## Known caveats
 
 - Docker rewrites iptables on restart → handled by `ExecStartPost` drop-in.
+- **`kubectl top` and HPA still need metrics-server on Kubernetes v1.37.** v1.37 made the `metrics.k8s.io`
+  API *definition* stable (KEP-5207), not a built-in server: it is still served through the aggregation layer.
+  The kubelet exposes per-container CPU/memory natively (`/stats/summary`, `/metrics/resource`), but only
+  through the node proxy. metrics-server v0.9.1 registers `v1beta1` only; that is enough (kubectl falls back,
+  HPA reads only v1beta1 in v1.37). Verified 2026-11-07 on a v1.37.0 kind cluster.
 - MetalLB (and metrics-server) readiness waits are `180s` — their images pull from quay.io through the mirror on first use (controller must pull+run before speaker's `memberlist` secret exists, then speaker pulls); the mirror caches them so subsequent clusters are fast. (The multi-minute timeouts seen historically were actually the hostname-shadowing mirror-bypass bug — direct, uncached pulls — not a genuinely slow mirror.) `kind create cluster --wait 5m` covers the core node images (preloaded).
 - macOS VPN software can conflict with the host route → `marina doctor` warns.
 - **The VM can lose internet access through lima0 while the Mac→VM path keeps working.** macOS stops forwarding

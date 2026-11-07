@@ -85,10 +85,16 @@ func dataFile(path, content, permissions string) limatype.Provision {
 // Docker then runs against an empty image store while the real one sits hidden
 // underneath. (Measured: bind source was /dev/vda1[/mnt/...] not /dev/vdb1.)
 //
+// Lima v2.3's additionalDisks `mountPoint` does not help: the mount still comes
+// from the same cloud-final boot script, so `mountPoint: /var/lib/containerd`
+// would race Docker exactly as described above.
+//
 // So: find the partition by its filesystem label and mount it directly, early,
-// from a oneshot ordered Before= containerd/docker (which Require= it). Lima's
-// later mount of the same device at /mnt/lima-<name> is harmless — two
-// mountpoints for one filesystem. First-boot formatting is still Lima's job:
+// from a oneshot ordered Before= containerd/docker (which Require= it). The
+// disk is attached with `mount: false` (Lima v2.3), so Lima no longer mounts the
+// same filesystem a second time at /mnt/lima-<name>; it still formats it on
+// first attach and grows the partition + filesystem after a resize (growpart
+// and resize2fs run whether or not Lima mounts). First-boot formatting is Lima's job:
 // its boot script runs before the provision scripts, so the label already
 // exists by the time any of this is installed.
 //
@@ -177,7 +183,7 @@ systemctl enable marina-image-disk.service
 // Separate from the kind node image version (specified per-cluster in config).
 // Its default/validated kindest/node image tag is config.DefaultKindNodeVersion —
 // keep the two in sync when bumping kind.
-const KindCLIVersion = "v0.32.0"
+const KindCLIVersion = "v0.33.0"
 
 // provisionScript runs inside the VM as root (mode: system) on first boot.
 // It installs Docker, sets socket permissions, enables IP forwarding, and
@@ -419,8 +425,9 @@ func Build(cfg *config.Config) *limatype.LimaYAML {
 	}
 
 	// Attach the persistent container image store disk. Lima partitions and
-	// formats it on first attach, then mounts it at /mnt/lima-<name> on every
-	// boot; imageDiskScript binds it over /var/lib/containerd.
+	// formats it on first attach; imageDiskScript mounts it at
+	// /var/lib/containerd. mount: false stops Lima from also mounting it at
+	// /mnt/lima-<name> (see imageDiskProvisions for why Lima's mount is unusable).
 	// The disk itself is created host-side by vm.EnsureImageDisk before start.
 	if cfg.VM.ImageDisk != "" {
 		y.AdditionalDisks = []limatype.Disk{
@@ -428,6 +435,7 @@ func Build(cfg *config.Config) *limatype.LimaYAML {
 				Name:   config.ImageDiskName(cfg.VM.Name),
 				Format: new(true),
 				FSType: new("ext4"),
+				Mount:  new(false),
 			},
 		}
 	}

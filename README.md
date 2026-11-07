@@ -90,7 +90,7 @@ This README is the quick tour. The full documentation lives at
 | Tool | Version | Purpose |
 |---|---|---|
 | Docker | latest via get.docker.com | Container runtime for kind and registries |
-| kind | v0.32.0 | Kubernetes-in-Docker cluster manager |
+| kind | v0.33.0 | Kubernetes-in-Docker cluster manager |
 | kubectl | latest stable | Cluster management from within the VM |
 | jq, iptables, curl, net-tools, python3 | distro packages | Tooling for scripts and routing rules |
 | ca-certificates | upgraded on first boot | Trust store for dockerd, kind, kubectl and the registry mirrors |
@@ -280,7 +280,7 @@ network:
 
 # ── Kind defaults (applied to every `marina cluster create`) ─────────────────
 kind:
-  nodeVersion: "v1.36.1"
+  nodeVersion: "v1.37.0"
   metalLBVersion: "v0.16.1"
   customDnsResolvers:
     - domain: "runlocal.dev"          # forward to 8.8.8.8/8.8.4.4 (default resolvers)

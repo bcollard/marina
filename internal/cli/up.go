@@ -148,6 +148,17 @@ func runUp(ctx context.Context, showVMLogs bool) error {
 		return fmt.Errorf("guest proxy environment: %w", err)
 	}
 
+	// The kind CLI is baked in at VM creation; bring it up to the bundled
+	// version so a marina upgrade reaches existing VMs. After the proxy env:
+	// the download may need it.
+	if upgraded, err := reconcileKindCLI(ctx, g); err != nil {
+		return fmt.Errorf("kind CLI: %w", err)
+	} else if upgraded {
+		if err := warnPinnedNodeVersion(cfg); err != nil {
+			return err
+		}
+	}
+
 	// 6. Ensure kind Docker network.
 	if err := docker.EnsureKindNetwork(ctx, g, cfg.Network.KindBridgeCIDR); err != nil {
 		return fmt.Errorf("docker network: %w", err)
@@ -390,6 +401,13 @@ func reviewConfigBeforeCreate(cfg *config.Config) error {
 	if cfg.Kind.NodeVersion == config.DefaultKindNodeVersion {
 		return nil
 	}
+	return offerNodeVersionUpdate(cfg, "before creating the VM")
+}
+
+// offerNodeVersionUpdate warns that kind.nodeVersion drifts from the default and,
+// on a terminal, offers to rewrite it in the config file. when finishes the
+// question ("Update kind.nodeVersion to X in <file> <when>?").
+func offerNodeVersionUpdate(cfg *config.Config, when string) error {
 	fmt.Printf("⚠ Your config pins kind.nodeVersion=%q, but this marina version's default is %q\n"+
 		"  (matched to the bundled kind CLI %s). A mismatched node version is unsupported and\n"+
 		"  can make cluster creation fail.\n",
@@ -401,7 +419,7 @@ func reviewConfigBeforeCreate(cfg *config.Config) error {
 		return nil
 	}
 
-	fmt.Printf("Update kind.nodeVersion to %s in %s before creating the VM? [y/N] ", config.DefaultKindNodeVersion, configFile)
+	fmt.Printf("Update kind.nodeVersion to %s in %s %s? [y/N] ", config.DefaultKindNodeVersion, configFile, when)
 	var answer string
 	_, _ = fmt.Scanln(&answer)
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
