@@ -162,6 +162,12 @@ func (m *Manager) Delete(ctx context.Context) error {
 		if err := instance.StopGracefully(ctx, inst, false); err != nil {
 			slog.Warn("graceful stop failed, deleting forcibly", "name", m.name, "err", err)
 		}
+		// Re-read: the struct still carries the driver and hostagent PIDs from
+		// before the stop, and Delete's StopForcibly would SIGKILL them again,
+		// logging "no such process" once per PID.
+		if fresh, err := store.Inspect(ctx, m.name); err == nil {
+			inst = fresh
+		}
 	}
 	slog.Info("Deleting Lima instance", "name", m.name)
 	if err := instance.Delete(ctx, inst, true); err != nil {
