@@ -18,6 +18,7 @@ import (
 	"github.com/bcollard/marina/internal/guest"
 	"github.com/bcollard/marina/internal/kind"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func newClusterApplyCmd() *cobra.Command {
@@ -107,6 +108,7 @@ func runClusterApply(ctx context.Context, filename string, dryRun bool, maxParal
 	if err != nil {
 		return err
 	}
+	plan.Manifest = string(data)
 	if maxParallel > 0 {
 		plan.MaxParallel = maxParallel
 	}
@@ -204,6 +206,7 @@ func adoptIntoFleet(ctx context.Context, g *guest.Client, cfg *config.Config, cs
 			return fmt.Errorf("adopting cluster %q: %w", name, err)
 		}
 		joinFleetZone(ctx, g, cfg, name, cs.Metadata.Name)
+		recordFleetMembership(ctx, g, cs.Metadata.Name, plan.Manifest, pc)
 	}
 	fmt.Printf("adopted %d cluster(s) into fleet %q\n", len(names), cs.Metadata.Name)
 	return nil
@@ -308,7 +311,7 @@ func executePlan(ctx context.Context, g *guest.Client, cfg *config.Config, plan 
 			}
 
 			fmt.Printf("→ creating cluster %q (num %d)\n", pc.Name, pc.Num)
-			err := createOne(ctx, g, cfg, plan.Name, pc, &mergeMu)
+			err := createOne(ctx, g, cfg, plan.Name, plan.Manifest, pc, &mergeMu)
 			if err != nil {
 				slog.Error("Cluster creation failed", "cluster", pc.Name, "err", err)
 			} else {
@@ -323,7 +326,7 @@ func executePlan(ctx context.Context, g *guest.Client, cfg *config.Config, plan 
 }
 
 // createOne builds the per-cluster config overrides and creates a single cluster.
-func createOne(ctx context.Context, g *guest.Client, cfg *config.Config, fleetName string, pc fleet.PlannedCluster, mergeMu *sync.Mutex) error {
+func createOne(ctx context.Context, g *guest.Client, cfg *config.Config, fleetName, manifest string, pc fleet.PlannedCluster, mergeMu *sync.Mutex) error {
 	// Labels: merged per-cluster/default labels, plus the fleet label.
 	labels := map[string]string{}
 	maps.Copy(labels, pc.Labels)
@@ -362,6 +365,8 @@ func createOne(ctx context.Context, g *guest.Client, cfg *config.Config, fleetNa
 			return fmt.Errorf("metrics-server addon: %w", err)
 		}
 	}
+
+	recordFleetMembership(ctx, g, fleetName, manifest, pc)
 
 	// Kubeconfig merge (serialized: it read-modify-writes ~/.kube/config).
 	if cfg.Kind.AutoMergeKubeconfig != nil && *cfg.Kind.AutoMergeKubeconfig {
@@ -575,4 +580,25 @@ func boolOrTrue(p *bool) bool {
 		return true
 	}
 	return *p
+}
+
+// recordFleetMembership keeps the applied manifest and the member's resolved
+// entry in the cluster (kind.FleetRecord), so `fleet describe`/`export` and
+// marina-ui can show options that live state cannot reveal (dependsOn,
+// registries, addons). Best-effort: a failure costs that display, not the
+// cluster, so it only warns.
+func recordFleetMembership(ctx context.Context, g *guest.Client, fleetName, manifest string, pc fleet.PlannedCluster) {
+	if fleetName == "" || manifest == "" {
+		return
+	}
+	entry := pc.ClusterEntry
+	entry.Num = pc.Num
+	b, err := yaml.Marshal(entry)
+	if err != nil {
+		slog.Warn("Could not record the fleet manifest", "cluster", pc.Name, "err", err)
+		return
+	}
+	if err := kind.WriteFleetRecord(ctx, g, pc.Name, kind.FleetRecord{Fleet: fleetName, Manifest: manifest, Cluster: string(b)}); err != nil {
+		slog.Warn("Could not record the fleet manifest", "cluster", pc.Name, "err", err)
+	}
 }

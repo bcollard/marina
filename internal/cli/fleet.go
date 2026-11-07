@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bcollard/marina/internal/config"
+	"github.com/bcollard/marina/internal/fleet"
 	"github.com/bcollard/marina/internal/kind"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -109,11 +110,27 @@ type fleetMember struct {
 	K8sVersion     string            `json:"k8sVersion"     yaml:"k8sVersion"`
 	Ready          bool              `json:"ready"          yaml:"ready"`
 	Labels         map[string]string `json:"labels"         yaml:"labels"`
+	// Options is the member's resolved manifest entry, from its marina-fleet
+	// record. nil for a cluster created before marina kept one, or adopted
+	// with `fleet adopt` (no manifest).
+	Options *fleet.ClusterEntry `json:"options,omitempty" yaml:"options,omitempty"`
+	// Addons is detected live, so it is right with or without a record.
+	Addons memberAddons `json:"addons" yaml:"addons"`
+}
+
+type memberAddons struct {
+	MetricsServer *kind.AddonStatus `json:"metricsServer,omitempty" yaml:"metricsServer,omitempty"`
 }
 
 type fleetDescription struct {
 	Name    string        `json:"name"     yaml:"name"`
 	Members []fleetMember `json:"members"  yaml:"members"`
+	// Manifest is the most recently applied manifest any member recorded
+	// (ManifestSource "applied"), else one reconstructed from live state like
+	// `marina fleet export` ("exported").
+	Manifest       string `json:"manifest"                yaml:"manifest"`
+	ManifestSource string `json:"manifestSource"          yaml:"manifestSource"`
+	AppliedAt      string `json:"appliedAt,omitempty"     yaml:"appliedAt,omitempty"`
 }
 
 func runFleetDescribe(ctx context.Context, name, outputFmt string) error {
@@ -142,8 +159,12 @@ func runFleetDescribe(ctx context.Context, name, outputFmt string) error {
 		if err != nil {
 			return err
 		}
+		extras, err := kind.ClusterExtrasFor(ctx, g, n)
+		if err != nil {
+			return err
+		}
 		num := numByName[n]
-		desc.Members = append(desc.Members, fleetMember{
+		m := fleetMember{
 			Name:           n,
 			Num:            num,
 			APIPort:        7000 + num,
@@ -152,7 +173,30 @@ func runFleetDescribe(ctx context.Context, name, outputFmt string) error {
 			K8sVersion:     info.KubeletVersion,
 			Ready:          info.Ready,
 			Labels:         info.Labels,
-		})
+			Addons:         memberAddons{MetricsServer: extras.MetricsServer},
+		}
+		if rec := extras.Record; rec != nil {
+			var entry fleet.ClusterEntry
+			if err := yaml.Unmarshal([]byte(rec.Cluster), &entry); err == nil && entry.Name != "" {
+				m.Options = &entry
+			}
+			// RFC 3339 UTC strings sort chronologically.
+			if rec.Manifest != "" && rec.AppliedAt >= desc.AppliedAt {
+				desc.Manifest, desc.AppliedAt, desc.ManifestSource = rec.Manifest, rec.AppliedAt, "applied"
+			}
+		}
+		desc.Members = append(desc.Members, m)
+	}
+	if desc.Manifest == "" {
+		man, err := buildFleetManifest(ctx, g, names, name, true)
+		if err != nil {
+			return err
+		}
+		b, err := yaml.Marshal(man)
+		if err != nil {
+			return err
+		}
+		desc.Manifest, desc.ManifestSource = string(b), "exported"
 	}
 
 	switch outputFmt {
@@ -175,6 +219,19 @@ func runFleetDescribe(ctx context.Context, name, outputFmt string) error {
 			fmt.Printf("    kubeconfig: %s\n", m.KubeconfigPath)
 			fmt.Printf("    nodes:      %d (%s, %s)\n", m.Nodes, m.K8sVersion, ready)
 			fmt.Printf("    labels:     %s\n", formatLabels(m.Labels))
+			if ms := m.Addons.MetricsServer; ms != nil {
+				state := "not ready"
+				if ms.Ready {
+					state = "ready"
+				}
+				fmt.Printf("    addons:     metrics-server %s (%s)\n", ms.Version, state)
+			}
+			if o := m.Options; o != nil && len(o.DependsOn) > 0 {
+				fmt.Printf("    dependsOn:  %s\n", strings.Join(o.DependsOn, ", "))
+			}
+		}
+		if desc.ManifestSource == "applied" {
+			fmt.Printf("\nManifest: applied %s (full YAML: -o yaml)\n", desc.AppliedAt)
 		}
 		return nil
 	}

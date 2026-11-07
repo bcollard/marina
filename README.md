@@ -553,7 +553,7 @@ spec:
 ```sh
 marina fleet create -f fleet.yaml         # create the clusters (--dry-run to preview, --max-parallel N)
 marina fleet list                         # show fleets and their member clusters
-marina fleet describe dev-fleet           # members with num, ports, node version/readiness, labels
+marina fleet describe dev-fleet           # members with num, ports, node version/readiness, labels, addons, dependsOn; -o yaml adds the applied manifest
 marina fleet export dev staging > f.yaml  # capture live clusters as a Fleet manifest
 marina fleet export -l env=dev            # ...by label selector
 marina fleet export                       # ...or pick them interactively

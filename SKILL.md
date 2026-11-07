@@ -83,7 +83,7 @@ spec:
 marina fleet create -f fleet.yaml             # create the missing clusters (existing ones are skipped)
 marina fleet create -f fleet.yaml --dry-run   # preview the plan (nums, order, options); creates nothing
 marina fleet list                             # fleets and their member clusters
-marina fleet describe dev-fleet               # members with num, ports, node version/readiness, labels
+marina fleet describe dev-fleet               # members with num, ports, node version/readiness, labels, addons, dependsOn; -o yaml adds the applied manifest
 marina fleet export dev staging > fleet.yaml  # capture live clusters as a Fleet manifest
 marina fleet export                           # ...or pick them interactively
 marina fleet label dev-fleet -l tier=gold     # label every cluster in the fleet (key- to remove)
