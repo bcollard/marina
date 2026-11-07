@@ -81,15 +81,15 @@ type Defaults struct {
 // ClusterEntry is one cluster in the set. It unmarshals from either a bare
 // string (just the name) or a mapping with options.
 type ClusterEntry struct {
-	Name        string            `yaml:"name"`
-	DependsOn   []string          `yaml:"dependsOn,omitempty"`
-	Num         int               `yaml:"num,omitempty"`
-	NodeVersion string            `yaml:"nodeVersion,omitempty"`
-	Region      string            `yaml:"region,omitempty"`
-	Zone        string            `yaml:"zone,omitempty"`
-	Registries  *RegistrySelect   `yaml:"registries,omitempty"`
-	Addons      *Addons           `yaml:"addons,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
+	Name        string            `yaml:"name" json:"name"`
+	DependsOn   []string          `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+	Num         int               `yaml:"num,omitempty" json:"num,omitempty"`
+	NodeVersion string            `yaml:"nodeVersion,omitempty" json:"nodeVersion,omitempty"`
+	Region      string            `yaml:"region,omitempty" json:"region,omitempty"`
+	Zone        string            `yaml:"zone,omitempty" json:"zone,omitempty"`
+	Registries  *RegistrySelect   `yaml:"registries,omitempty" json:"registries,omitempty"`
+	Addons      *Addons           `yaml:"addons,omitempty" json:"addons,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
 }
 
 // UnmarshalYAML accepts either a scalar (the cluster name) or a full mapping.
@@ -112,21 +112,21 @@ func (c *ClusterEntry) UnmarshalYAML(value *yaml.Node) error {
 type RegistrySelect struct {
 	// Mirrors selects pull-through mirrors by name. nil = all; ["*"] = all;
 	// [] = none; [names...] = exactly those.
-	Mirrors *[]string `yaml:"mirrors"`
+	Mirrors *[]string `yaml:"mirrors" json:"mirrors,omitempty"`
 }
 
 // Addons is the extensible per-cluster addon set. Only metrics-server today.
 type Addons struct {
-	MetricsServer *MetricsServer `yaml:"metricsServer"`
+	MetricsServer *MetricsServer `yaml:"metricsServer" json:"metricsServer,omitempty"`
 }
 
 type MetricsServer struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
 	// Version is a metrics-server release tag (e.g. "v0.7.2"); empty = latest.
-	Version string `yaml:"version"`
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 	// KubeletInsecureTLS adds --kubelet-insecure-tls (required on kind).
 	// nil = true.
-	KubeletInsecureTLS *bool `yaml:"kubeletInsecureTLS"`
+	KubeletInsecureTLS *bool `yaml:"kubeletInsecureTLS,omitempty" json:"kubeletInsecureTLS,omitempty"`
 }
 
 // Parse decodes a Fleet manifest from YAML bytes (strict: unknown fields error).

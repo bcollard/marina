@@ -41,9 +41,10 @@ interactive picker.
   marina fleet export > fleet.yaml          # interactive picker
 
 Captured per cluster: name, num, nodeVersion, region/zone, and custom node
-labels. Not captured, because live clusters do not record it: dependsOn
-ordering, registry mirror selection, and addons — add those by hand if you
-need them.`,
+labels. A cluster created from a manifest by marina v0.3.10 or later also
+keeps its entry (ConfigMap kube-system/marina-fleet), so dependsOn, registry
+mirror selection and addons are exported too. For older clusters they are not
+recoverable from live state; add them by hand.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFleetExport(cmd.Context(), args, selector, name, withNums)
 		},
@@ -158,7 +159,24 @@ func buildFleetManifest(ctx context.Context, g *guest.Client, names []string, na
 		infos[n] = info
 	}
 
-	return assembleFleet(names, numByName, infos, name, withNums), nil
+	man := assembleFleet(names, numByName, infos, name, withNums)
+
+	// Members created from a manifest keep their resolved entry
+	// (kind.FleetRecord); prefer it, since it carries what live state cannot:
+	// dependsOn, registries, addons. Live facts still win for num.
+	for i, e := range man.Spec.Clusters {
+		ex, err := kind.ClusterExtrasFor(ctx, g, e.Name)
+		if err != nil || ex.Record == nil {
+			continue
+		}
+		var rec fleet.ClusterEntry
+		if yaml.Unmarshal([]byte(ex.Record.Cluster), &rec) != nil || rec.Name != e.Name {
+			continue
+		}
+		rec.Num = e.Num
+		man.Spec.Clusters[i] = rec
+	}
+	return man, nil
 }
 
 // assembleFleet is the pure transform from live cluster facts to a manifest.

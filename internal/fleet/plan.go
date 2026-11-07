@@ -16,6 +16,9 @@ type Plan struct {
 	MaxParallel int
 	Strategy    string
 	Clusters    []PlannedCluster // manifest order
+	// Manifest is the raw manifest the plan was resolved from; members keep a
+	// copy (kind.FleetRecord). Empty when the plan was not built from a file.
+	Manifest string
 }
 
 // ToCreate returns the planned clusters that do not yet exist.

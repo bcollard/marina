@@ -397,6 +397,13 @@ A declarative fleet applied via `marina cluster apply -f <file>`. See `examples/
 - **Additive**: existing clusters are skipped (never recreated/mutated). Mirror-name selections are validated against the config catalog up front.
 - **Teardown**: `marina cluster delete -f <file>` deletes the manifest's clusters that exist, in reverse-dependency order (`fleet.DeletionOrder`), prompting unless `--yes`.
 - **Node labels** (`kind.applyNodeLabels`, applied post-create via `kubectl label nodes --all --overwrite`, admin creds so no NodeRestriction): every marina cluster always gets `managed-by=marina`; fleets add `marina.run/fleet=<metadata.name>`; `region`/`zone` are surfaced as `topology.kubernetes.io/*` (kubeadm node-labels patch); custom labels come from `-l key=value` (CLI) or `labels:`/`defaults.labels` (Fleet). Validated by `config.ValidateLabels` before any create. Existing clusters can be relabeled with `marina cluster label <name> -l key=value` / `-l key-` (reuses `kind.LabelNodes`).
+- **Fleet record** (`kind.FleetRecord`, v0.3.10+): `createOne` and `--adopt` write ConfigMap
+  `kube-system/marina-fleet` in each member — `manifest.yaml` (the whole manifest as applied),
+  `cluster.yaml` (the member's resolved entry, num set), `fleet`, `appliedAt`. It lives and dies with the
+  cluster, so there is no host-side state. `fleet describe -o json` returns per-member `options` (that entry),
+  live `addons` (detected from the metrics-server Deployment, so it also covers older clusters), and
+  `manifest` + `manifestSource` (`applied`: the newest record; `exported`: rebuilt like `fleet export`).
+  marina-ui's fleet view reads this. Best-effort: a write failure only warns.
 - **`fleet` command & selectors**: fleet membership is derived from the live `marina.run/fleet` node label (not the manifest), so `marina fleet list/describe/delete/label <name>` operate on whatever clusters currently carry the label.
 - **Adoption**: `apply`/`fleet create` only *skip* pre-existing clusters by name — it does not relabel them, so a listed cluster that isn't already a member is **not** silently pulled into the fleet. Instead it warns and lists them; re-run with `--adopt` to relabel them into the fleet (fleet label + the manifest entry's labels, via `adoptIntoFleet` → `kind.LabelNodes`). `marina fleet adopt <fleet> <cluster>…` does the same for arbitrary existing clusters (just sets `marina.run/fleet`). `fleet delete <name>` and `fleet label <name>` resolve members via `kind.ClustersMatchingSelector(g, "marina.run/fleet=<name>")`; `fleet list` groups via `kind.ClustersByFleet`. `cluster list -l` / `cluster delete -l` take an arbitrary kubectl label selector (matched in-guest by kubectl, one call per cluster). `fleet create -f`/`delete -f` delegate to the same code as `cluster apply -f`/`delete -f`. Selectors are charset-validated (`selectorRE`) before shell interpolation.
 
@@ -481,12 +488,13 @@ marina fleet create -f <file>          Create clusters from a Fleet manifest (al
 marina fleet adopt <fleet> <cluster>…  Adopt existing clusters into a fleet (sets their marina.run/fleet label)
 marina fleet list [-o text|json|yaml]  List fleets (grouped by marina.run/fleet) and their member clusters
 marina fleet describe <name>           Show a fleet's members with num, API port, kubeconfig, node count/version/readiness, labels ([-o text|json|yaml])
+                                       json/yaml: per-member options (applied entry) + live addons, and the manifest (applied or exported)
 marina fleet export [cluster...]       Write a Fleet manifest for live clusters (reverse of `fleet create -f`)
   -l, --selector <sel>                 Select by node label selector instead of names
   --name <fleet>                       metadata.name (default: shared marina.run/fleet label, else "exported")
   --nums                               Record each cluster's num, pinning API ports on re-apply (default true)
                                        No names and no selector → interactive picker.
-                                       Not captured (not recoverable from live state): dependsOn, registries, addons.
+                                       dependsOn, registries, addons come from the member's kube-system/marina-fleet record (v0.3.10+); older clusters lack them.
 marina fleet delete <name>             Delete all clusters in the named fleet (-y to skip prompt)
 marina fleet delete -f <file>          Delete the clusters listed in a Fleet manifest
 marina fleet label <name> -l key=value Apply node labels to every cluster in the fleet (key- to remove)
