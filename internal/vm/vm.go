@@ -153,11 +153,47 @@ func (m *Manager) Delete(ctx context.Context) error {
 		}
 		return fmt.Errorf("inspecting instance %q: %w", m.name, err)
 	}
+	// instance.Delete(force) SIGKILLs a running hostagent, which then never
+	// unlinks the host-side Docker socket it listens on (Lima v2.3 forwards it
+	// over gRPC from inside the hostagent). Stop gracefully first; force only
+	// covers what a graceful stop could not.
+	if inst.Status == limatype.StatusRunning {
+		slog.Info("Stopping Lima instance", "name", m.name)
+		if err := instance.StopGracefully(ctx, inst, false); err != nil {
+			slog.Warn("graceful stop failed, deleting forcibly", "name", m.name, "err", err)
+		}
+	}
 	slog.Info("Deleting Lima instance", "name", m.name)
 	if err := instance.Delete(ctx, inst, true); err != nil {
 		return fmt.Errorf("deleting instance %q: %w", m.name, err)
 	}
+	removeStaleSocket(DockerSocketPath(m.name))
 	return nil
+}
+
+// DockerSocketPath is the host end of the forwarded guest /run/docker.sock
+// (limatemplate's portForwards HostSocket).
+func DockerSocketPath(vmName string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "."+vmName+".docker.sock")
+}
+
+// removeStaleSocket removes path only when it is a Unix socket, so a regular
+// file a user happens to keep there is never deleted.
+func removeStaleSocket(path string) {
+	if path == "" {
+		return
+	}
+	fi, err := os.Lstat(path)
+	if err != nil || fi.Mode().Type() != os.ModeSocket {
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		slog.Warn("could not remove stale Docker socket", "path", path, "err", err)
+	}
 }
 
 // Inspect returns the current state of the instance.

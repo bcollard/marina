@@ -14,6 +14,7 @@ import (
 
 	"github.com/lima-vm/lima/v2/pkg/limatype"
 	"github.com/lima-vm/lima/v2/pkg/limatype/dirnames"
+	"github.com/lima-vm/lima/v2/pkg/sshutil"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -45,10 +46,12 @@ func NewClient(inst *limatype.Instance) (*Client, error) {
 
 	user := guestUser(inst)
 	cfg := &ssh.ClientConfig{
-		User:            user,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Lima local VM, acceptable
-		Timeout:         10 * time.Second,
+		User:    user,
+		Auth:    []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Timeout: 10 * time.Second,
+	}
+	if err := setHostKeyCheck(cfg, inst.Dir); err != nil {
+		return nil, err
 	}
 
 	addr := net.JoinHostPort(inst.SSHAddress, fmt.Sprintf("%d", inst.SSHLocalPort))
@@ -189,15 +192,17 @@ func SSHArgs(inst *limatype.Instance) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	hk, err := hostKeyArgs(inst)
+	if err != nil {
+		return nil, err
+	}
 	user := guestUser(inst)
 	args := []string{
 		"-i", keyPath,
 		"-p", fmt.Sprintf("%d", inst.SSHLocalPort),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
-		fmt.Sprintf("%s@%s", user, inst.SSHAddress),
 	}
+	args = append(args, hk...)
+	args = append(args, "-o", "LogLevel=ERROR", fmt.Sprintf("%s@%s", user, inst.SSHAddress))
 	return args, nil
 }
 
@@ -209,14 +214,57 @@ func SCPArgs(inst *limatype.Instance) (opts []string, userHost string, err error
 	if err != nil {
 		return nil, "", err
 	}
+	hk, err := hostKeyArgs(inst)
+	if err != nil {
+		return nil, "", err
+	}
 	opts = []string{
 		"-i", keyPath,
 		"-P", fmt.Sprintf("%d", inst.SSHLocalPort),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
 	}
+	opts = append(opts, hk...)
+	opts = append(opts, "-o", "LogLevel=ERROR")
 	return opts, fmt.Sprintf("%s@%s", guestUser(inst), inst.SSHAddress), nil
+}
+
+// setHostKeyCheck verifies the guest against the host key Lima (v2.3+) pins in
+// <instDir>/ssh.known_hosts on the first boot it sees. An instance that has
+// not been started by Lima v2.3+ yet has no pinned key; it is accepted
+// unverified, as before.
+func setHostKeyCheck(cfg *ssh.ClientConfig, instDir string) error {
+	key, err := sshutil.ReadPinnedHostKey(instDir)
+	if err != nil {
+		return fmt.Errorf("reading the pinned SSH host key: %w", err)
+	}
+	if key == nil {
+		slog.Debug("no pinned SSH host key, skipping host key verification", "instDir", instDir)
+		cfg.HostKeyCallback = ssh.InsecureIgnoreHostKey() //nolint:gosec // pre-v2.3 instance: nothing to verify against
+		return nil
+	}
+	cfg.HostKeyCallback = ssh.FixedHostKey(key)
+	// Ask the server for the pinned key's type; otherwise it may present
+	// another of its keys and FixedHostKey rejects the connection.
+	if key.Type() == ssh.KeyAlgoRSA {
+		cfg.HostKeyAlgorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+	} else {
+		cfg.HostKeyAlgorithms = []string{key.Type()}
+	}
+	return nil
+}
+
+// hostKeyArgs returns the ssh/scp "-o" options that verify the guest's pinned
+// host key (Lima's sshutil.HostKeyOpts), or disable verification for an
+// instance that has no pinned key yet.
+func hostKeyArgs(inst *limatype.Instance) ([]string, error) {
+	opts, err := sshutil.HostKeyOpts(context.Background(), "ssh", inst.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("SSH host key options: %w", err)
+	}
+	args := make([]string, 0, 2*len(opts))
+	for _, o := range opts {
+		args = append(args, "-o", o)
+	}
+	return args, nil
 }
 
 // dial opens a new SSH connection. Callers are responsible for closing it.
