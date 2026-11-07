@@ -302,6 +302,23 @@ Lima requires a small Linux binary (`lima-guestagent`) uploaded into the VM at s
 
 The downloaded version is matched to the Lima Go module version at runtime via `runtime/debug.ReadBuildInfo()`. The release asset uses `uname -m` naming: `Darwin-arm64` / `Darwin-x86_64` (not `Darwin-amd64`).
 
+### Guest SSH host key (Lima ≥ v2.3)
+
+Lima's hostagent pins the key the guest presents on the first boot under v2.3
+in `<instDir>/ssh.known_hosts` (`ssh_deletekeys: false` keeps it across
+reboots). marina verifies against it on both SSH paths: the Go client
+(`guest.setHostKeyCheck` → `sshutil.ReadPinnedHostKey` + `ssh.FixedHostKey`,
+with `HostKeyAlgorithms` set to the pinned type or the server may offer another
+key) and `shell`/`copy` (`sshutil.HostKeyOpts`). No file yet (an instance not
+yet booted by v2.3) means no verification, as before.
+
+### Destroy stops the VM gracefully first
+
+`instance.Delete(force)` SIGKILLs a running hostagent. Since v2.3 forwards
+`docker.sock` over gRPC from inside the hostagent, a killed one leaves
+`~/.<vmName>.docker.sock` behind. `vm.Manager.Delete` calls `StopGracefully`
+first and then removes the path if it is still a socket.
+
 ### lima-version file
 
 Lima writes a `lima-version` file (mode `0o444`) into the instance dir during `instance.Create()` with version `"<unknown>"` when no ldflags are set. marina fixes this in `vm.create()` by calling `os.Remove()` then `os.WriteFile()` with the actual Lima module version read via `runtime/debug.ReadBuildInfo()`. `os.WriteFile` alone silently fails on a read-only file — the Remove step is required.
