@@ -8,9 +8,9 @@ require (
 	github.com/lima-vm/lima/v2 v2.3.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/crypto v0.58.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -83,12 +83,12 @@ require (
 	github.com/zclconf/go-cty v1.19.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
-	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
